@@ -105,3 +105,6 @@ dist
 
 # Typescript build output
 dist/
+
+# Ssl certificates for example
+ssl/

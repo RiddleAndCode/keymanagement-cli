@@ -1,13 +1,16 @@
 {
-  "name": "typescript-cli-template",
+  "name": "keymanagement-cli",
   "version": "0.1.0",
   "description": "Template project for creating node CLI programs using Typescript",
+  "main": "./dist/index.js",
   "bin": {
-    "test-prog": "./dist/index.js"
+    "keyman": "./bin/keyman"
   },
   "scripts": {
     "build": "npm run build:clean && npm run build:compile",
+    "watch": "npm run build:clean && npm run build:watch",
     "build:compile": "tsc",
+    "build:watch": "tsc -w",
     "build:clean": "rimraf ./dist",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
