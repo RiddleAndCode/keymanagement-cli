@@ -1,40 +1,43 @@
-# typescript-cli-template
+# keymanagement-cli
 
-This is intended to be a starter template repo for creating CLI programs with Typescript. The template project uses [commander.js](https://github.com/tj/commander.js) as the library for wiring up the CLI commands and comes with Typescript, ESLint and Prettier preconfigured. The [ora](https://github.com/sindresorhus/ora) library is also preinstalled for showing spinners.
+A small CLI to generate / recover keys and tokens from the Key Management service
 
-## Getting Started
+## Installing
 
-1. Use GitHub's "[Use this Template](https://github.com/justinneff/typescript-cli-template/generate)" feature to genrate your own repo from this one.
-2. Clone your repo locally
-3. Install dependencies
+1. Install dependencies
 
 ```bash
 yarn install
 ```
 
-4. Edit the `package.json` file to update the `bin` links to change the name of the generated binary to suit your needs.
-
-```json
-"bin": {
-	"test-prog": "./dist/index.js"
-}
-```
-
-5. Run the build command to transpile the Typescript to Javascript. This will output to the `./dist` folder.
+2. Run the build command to transpile the Typescript to Javascript. This will output to the `./dist` folder.
 
 ```bash
 yarn build
 ```
 
-6. To enable running CLI commands locally link the project to your global NPM folder. This must be done with `npm link` since `yarn link` does not link `bin` files.
+3. To enable running CLI commands locally link the project to your global NPM folder. This must be done with `npm link` since `yarn link` does not link `bin` files.
 
 ```bash
 npm link --no-package-lock
 ```
 
-7. If you rename or add additional `bin` files, you will need to unlink and relink your project.
+## Usage
+
+Once the bin is linked you can learn more about its usage by running
 
 ```bash
-npm unlink
-npm link --no-package-lock
+keyman --help
 ```
+
+## Certificates
+
+The CLI uses client side TLS for authentication (as well as JWT if the `--token` flag is specified). If you generated certificates on the server (using `make certificates`) then the certificates should match one to one as follows
+
+| Server                | CLI                   |
+| :======:              | :======:              |
+| ./ssl/ca-cert.pem     | ./ssl/server-ca.pem   |
+| ./ssl/client-cert.pem | ./ssl/client-cert.pem |
+| ./ssl/client-key.pem  | ./ssl/client-key.pem  |
+
+Although of course, the server should be configurable against any client CA, and vice-versa
