@@ -35,7 +35,7 @@ keyman --help
 The CLI uses client side TLS for authentication (as well as JWT if the `--token` flag is specified). If you generated certificates on the server (using `make certificates`) then the certificates should match one to one as follows
 
 | Server                | CLI                   |
-| :======:              | :======:              |
+| --------------------- | --------------------- |
 | ./ssl/ca-cert.pem     | ./ssl/server-ca.pem   |
 | ./ssl/client-cert.pem | ./ssl/client-cert.pem |
 | ./ssl/client-key.pem  | ./ssl/client-key.pem  |
