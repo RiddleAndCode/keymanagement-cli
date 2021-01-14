@@ -9,7 +9,14 @@ import readline from 'readline'
 import crypto from 'crypto'
 
 const API_VERSION = '1.0.3'
+
 const MNEMONIC_LEN = 24
+const MAX_WORD_LEN = 8
+
+interface MnemonicWord {
+	index: number
+	word: string
+}
 
 // HTTPS / JWT REQUESTS
 
@@ -220,11 +227,6 @@ const recoverMnemonic = async ({
 
 // CRYPTO HELPERS
 
-const mnemonicHash = (mnemonic: string): string =>
-	crypto.createHash('sha256').update(mnemonic).digest('hex').substring(0, 8)
-
-// MNEMONIC I/O
-
 const readNextSecretLine = (question: string): Promise<string> =>
 	new Promise((accept, reject) => {
 		process.stdin.read()
@@ -235,12 +237,14 @@ const readNextSecretLine = (question: string): Promise<string> =>
 			input: process.stdin,
 			output: process.stdout,
 		})
-		rl.on('line', (input) => {
+		const cb = (input: string) => {
 			readline.cursorTo(process.stdout, 0, 0)
 			readline.clearScreenDown(process.stdout)
 			rl.close()
+			rl.off('line', cb)
 			accept(input)
-		})
+		}
+		rl.on('line', cb)
 	})
 
 const printNextSecretLine = (message: string): Promise<boolean> =>
@@ -249,13 +253,15 @@ const printNextSecretLine = (message: string): Promise<boolean> =>
 		readline.cursorTo(process.stdout, 0, 0)
 		readline.clearScreenDown(process.stdout)
 		process.stdout.write(message)
-		process.stdin.on('data', (input) => {
+		const cb = (input: string) => {
 			if (input.includes('\n')) {
 				readline.cursorTo(process.stdout, 0, 0)
 				readline.clearScreenDown(process.stdout)
+				process.stdin.off('data', cb)
 				accept(true)
 			}
-		})
+		}
+		process.stdin.on('data', cb)
 	})
 
 const readMnemonic = async () => {
@@ -279,8 +285,24 @@ const readMnemonic = async () => {
 	return currentWords.join(' ')
 }
 
+const mnemonicList = (mnemonic: string): MnemonicWord[] =>
+	mnemonic
+		.trim()
+		.split(/\s+/)
+		.map(
+			(word, index): MnemonicWord => {
+				return {
+					word,
+					index,
+				}
+			},
+		)
+
+const mnemonicHash = (mnemonic: string): string =>
+	crypto.createHash('sha256').update(mnemonic).digest('hex').substring(0, 8)
+
 const presentMnemonic = async (mnemonic: string, size: number) => {
-	const words = mnemonic.trim().split(/\s+/)
+	const words = mnemonicList(mnemonic)
 	const header = `Mnemonic ID: ${mnemonicHash(mnemonic)}\n`
 	let start = 0
 	let end = Math.min(start + size, words.length)
@@ -288,20 +310,75 @@ const presentMnemonic = async (mnemonic: string, size: number) => {
 		const nextWords = words.slice(start, end)
 		let descriptor
 		if (end - start > 1) {
-			descriptor = `Words ${start + 1}-${end}`
+			descriptor = `Words ${start + 1}-${end}:\n`
 		} else {
-			descriptor = `Word ${start + 1}`
+			descriptor = `Word: `
 		}
+		let nextWordsGrid = nextWords
+			.map(({ word, index }) => {
+				let padding = ' '.repeat(MAX_WORD_LEN - word.length)
+				return `[${index + 1}] ${word}${padding}`
+			})
+			.join('\t')
 		await printNextSecretLine(
 			`${header}\nPress "Enter" to reveal next words...`,
 		)
 		await printNextSecretLine(
-			`${header}\n${descriptor}: ${nextWords.join(
-				' ',
-			)}\n\nPress "Enter" to clear...`,
+			`${header}\n${descriptor}${nextWordsGrid}\n\nPress "Enter" to clear...`,
 		)
 		start += size
 		end = Math.min(start + size, words.length)
+	}
+}
+
+const selectMnemonicWords = (
+	mnemonic: string,
+	wordNum: number,
+): MnemonicWord[] => {
+	let out: MnemonicWord[] = []
+	let words = mnemonicList(mnemonic)
+	let offset = MNEMONIC_LEN / wordNum + 1
+	let next = 0
+	while (out.length < wordNum) {
+		next = (next + offset) % words.length
+		out.push(words.splice(next, 1)[0])
+	}
+	out.sort((a, b) => a.index - b.index)
+	return out
+}
+
+const verifyMnemonic = async (
+	mnemonic: string,
+	size: number,
+	maxAttempts: number,
+) => {
+	const header = `Mnemonic ID: ${mnemonicHash(mnemonic)}\n`
+	for (const { word, index } of selectMnemonicWords(mnemonic, size)) {
+		console.log(index, word)
+		let attempt = 0
+		let successful = false
+		while (attempt < maxAttempts) {
+			let attemptsRemaining = ''
+			if (attempt > 0) {
+				attemptsRemaining = ` (${maxAttempts - attempt} attempts remaining)`
+			}
+			let data = (
+				await readNextSecretLine(
+					`${header}\nEnter Word ${index + 1}${attemptsRemaining}`,
+				)
+			).trim()
+			if (data.length < 1) {
+				continue
+			}
+			if (data == word) {
+				successful = true
+				break
+			}
+			attempt += 1
+		}
+		if (!successful) {
+			throw new Error('Could not validate mnemonic')
+		}
 	}
 }
 
@@ -314,6 +391,9 @@ const cliAction = (program: any, fn: () => Promise<void>) => async () => {
 		}
 		if (program.validateNum < 1 || program.validateNum > MNEMONIC_LEN) {
 			throw new Error(`'--validate-num' must be between 1 and ${MNEMONIC_LEN}`)
+		}
+		if (program.maxAttempts < 1) {
+			throw new Error(`'--max-attempts' must be positive`)
 		}
 		await fn()
 		process.exit(0)
@@ -377,6 +457,12 @@ program.option(
 	(val, lastVal) => parseInt(val),
 	6,
 )
+program.option(
+	'--max-attempts <maxAttempts>',
+	'maxium number of attempts to verify a word',
+	(val, lastVal) => parseInt(val),
+	3,
+)
 
 program
 	.command('token')
@@ -407,6 +493,7 @@ program
 				serverCa: program.serverCa,
 			})
 			await presentMnemonic(mnemonic, program.wordNum)
+			await verifyMnemonic(mnemonic, program.verifyNum, program.maxAttempts)
 		}),
 	)
 
@@ -424,7 +511,7 @@ program
 				key: program.key,
 				serverCa: program.serverCa,
 			})
-			await presentMnemonic(mnemonic, program.wordNum)
+			await verifyMnemonic(mnemonic, program.verifyNum, program.maxAttempts)
 		}),
 	)
 
