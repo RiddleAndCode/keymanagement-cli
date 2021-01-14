@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
-import pkginfo from 'pkginfo'
 import tls from 'tls'
 import fs from 'fs'
 import path from 'path'
@@ -10,6 +9,7 @@ import readline from 'readline'
 import crypto from 'crypto'
 
 const API_VERSION = '1.0.3'
+const MNEMONIC_LEN = 24
 
 // HTTPS / JWT REQUESTS
 
@@ -259,10 +259,9 @@ const printNextSecretLine = (message: string): Promise<boolean> =>
 	})
 
 const readMnemonic = async () => {
-	const desiredLen = 24
 	const currentWords = []
-	while (currentWords.length < desiredLen) {
-		const remainingWordLen: number = desiredLen - currentWords.length
+	while (currentWords.length < MNEMONIC_LEN) {
+		const remainingWordLen: number = MNEMONIC_LEN - currentWords.length
 		let data = (
 			await readNextSecretLine(
 				`Enter mnemonic...\nNext words (${remainingWordLen} remaining)`,
@@ -274,8 +273,8 @@ const readMnemonic = async () => {
 		currentWords.push(...data.split(/\s+/))
 		process.stdout.write('\r\x1b[K')
 	}
-	if (currentWords.length > desiredLen) {
-		throw new Error('Mnemonic must be 24 words long')
+	if (currentWords.length > MNEMONIC_LEN) {
+		throw new Error('Mnemonic must be ${MNEMONIC_LEN} words long')
 	}
 	return currentWords.join(' ')
 }
@@ -308,8 +307,14 @@ const presentMnemonic = async (mnemonic: string, size: number) => {
 
 // CLI Helper
 
-const cliAction = (fn: () => Promise<void>) => async () => {
+const cliAction = (program: any, fn: () => Promise<void>) => async () => {
 	try {
+		if (program.wordNum < 1 || program.wordNum > MNEMONIC_LEN) {
+			throw new Error(`'--word-num' must be between 1 and ${MNEMONIC_LEN}`)
+		}
+		if (program.validateNum < 1 || program.validateNum > MNEMONIC_LEN) {
+			throw new Error(`'--validate-num' must be between 1 and ${MNEMONIC_LEN}`)
+		}
 		await fn()
 		process.exit(0)
 	} catch (e) {
@@ -332,11 +337,9 @@ const cliAction = (fn: () => Promise<void>) => async () => {
 
 // COMMAND LINE PROGRAM
 
-pkginfo(module, 'name', 'version')
-
 const program = new Command()
 
-program.version(module.exports.version)
+program.version(API_VERSION)
 
 program.option(
 	'-u, --url <url>',
@@ -366,14 +369,20 @@ program.option(
 	'-n, --word-num <wordNum>',
 	'number of words to present at a time when displaying mnemonic',
 	(val, lastVal) => parseInt(val),
-	24,
+	MNEMONIC_LEN,
+)
+program.option(
+	'-v, --verify-num <verifyNum>',
+	'number of words to verify when generating or recovering a mnemonic',
+	(val, lastVal) => parseInt(val),
+	6,
 )
 
 program
 	.command('token')
 	.description('create a JWT token to be used for authentication')
 	.action(
-		cliAction(async () => {
+		cliAction(program, async () => {
 			let res = await getToken({
 				baseUrl: program.url,
 				token: program.jwt,
@@ -389,7 +398,7 @@ program
 	.command('generate')
 	.description('generate a new keypair and mnemonic phrase')
 	.action(
-		cliAction(async () => {
+		cliAction(program, async () => {
 			let { mnemonic } = await generateMnemonic({
 				baseUrl: program.url,
 				token: program.jwt,
@@ -405,7 +414,7 @@ program
 	.command('recover')
 	.description('recover a keypair from an existing mnemonic phrase')
 	.action(
-		cliAction(async () => {
+		cliAction(program, async () => {
 			let input = await readMnemonic()
 			let { mnemonic } = await recoverMnemonic({
 				baseUrl: program.url,
