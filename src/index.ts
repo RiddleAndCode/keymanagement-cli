@@ -7,8 +7,9 @@ import path from 'path'
 import https from 'https'
 import http from 'http'
 import readline from 'readline'
+import crypto from 'crypto'
 
-const API_VERSION = '1.0.2'
+const API_VERSION = '1.0.3'
 
 // HTTPS / JWT REQUESTS
 
@@ -217,6 +218,11 @@ const recoverMnemonic = async ({
 	})
 }
 
+// CRYPTO HELPERS
+
+const mnemonicHash = (mnemonic: string): string =>
+	crypto.createHash('sha256').update(mnemonic).digest('hex').substring(0, 8)
+
 // MNEMONIC I/O
 
 const readNextSecretLine = (question: string): Promise<string> =>
@@ -276,6 +282,7 @@ const readMnemonic = async () => {
 
 const presentMnemonic = async (mnemonic: string, size: number) => {
 	const words = mnemonic.trim().split(/\s+/)
+	const header = `Mnemonic ID: ${mnemonicHash(mnemonic)}\n`
 	let start = 0
 	let end = Math.min(start + size, words.length)
 	while (start < words.length) {
@@ -286,9 +293,13 @@ const presentMnemonic = async (mnemonic: string, size: number) => {
 		} else {
 			descriptor = `Word ${start + 1}`
 		}
-		await printNextSecretLine(`Press "Enter" to reveal next words...`)
 		await printNextSecretLine(
-			`${descriptor}: ${nextWords.join(' ')}\nPress "Enter" to clear...`,
+			`${header}\nPress "Enter" to reveal next words...`,
+		)
+		await printNextSecretLine(
+			`${header}\n${descriptor}: ${nextWords.join(
+				' ',
+			)}\n\nPress "Enter" to clear...`,
 		)
 		start += size
 		end = Math.min(start + size, words.length)
@@ -300,6 +311,7 @@ const presentMnemonic = async (mnemonic: string, size: number) => {
 const cliAction = (fn: () => Promise<void>) => async () => {
 	try {
 		await fn()
+		process.exit(0)
 	} catch (e) {
 		let error
 		if (e.data?.description) {
