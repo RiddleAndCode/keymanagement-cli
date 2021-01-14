@@ -8,6 +8,8 @@ import https from 'https'
 import http from 'http'
 import readline from 'readline'
 
+const API_VERSION = '1.0.2'
+
 // HTTPS / JWT REQUESTS
 
 const handleRes = (
@@ -22,9 +24,9 @@ const handleRes = (
 		const contentType = res.headers['content-type']
 		res.on('data', (d) => {
 			try {
-				if (contentType?.startsWith('application/json')) {
+				if (contentType?.match(/application\/\S*json/)) {
 					d = JSON.parse(d.toString())
-				} else if (contentType?.startsWith('text/plain')) {
+				} else if (contentType?.match(/text\/\S*plain/)) {
 					d = d.toString()
 				}
 			} catch (e) {
@@ -150,7 +152,7 @@ const getToken = async ({
 	key: string
 	serverCa: string
 }): Promise<string> => {
-	const url = `https://${baseUrl}/riddleandcode/key-management/1.0.2/auth/56`
+	const url = `https://${baseUrl}/riddleandcode/key-management/${API_VERSION}/auth/56`
 	return await request({
 		url,
 		data: undefined,
@@ -175,7 +177,7 @@ const generateMnemonic = async ({
 	key: string
 	serverCa: string
 }): Promise<{ mnemonic: string }> => {
-	const url = `https://${baseUrl}/riddleandcode/key-management/1.0.2/masterkey`
+	const url = `https://${baseUrl}/riddleandcode/key-management/${API_VERSION}/masterkey`
 	return await request({
 		url,
 		data: undefined,
@@ -202,7 +204,7 @@ const recoverMnemonic = async ({
 	key: string
 	serverCa: string
 }): Promise<{ mnemonic: string }> => {
-	const url = `https://${baseUrl}/riddleandcode/key-management/1.0.2/masterkey`
+	const url = `https://${baseUrl}/riddleandcode/key-management/${API_VERSION}/masterkey`
 	const data = JSON.stringify({ mnemonic })
 	return await request({
 		url,
@@ -293,6 +295,29 @@ const presentMnemonic = async (mnemonic: string, size: number) => {
 	}
 }
 
+// CLI Helper
+
+const cliAction = (fn: () => Promise<void>) => async () => {
+	try {
+		await fn()
+	} catch (e) {
+		let error
+		if (e.data?.description) {
+			error = e.data.description
+		} else if (e.detail) {
+			error = e.detail
+		} else {
+			try {
+				error = e.toString()
+			} catch (_) {
+				error = 'Unknown error occured'
+			}
+		}
+		console.error(error)
+		process.exit(1)
+	}
+}
+
 // COMMAND LINE PROGRAM
 
 pkginfo(module, 'name', 'version')
@@ -335,8 +360,8 @@ program.option(
 program
 	.command('token')
 	.description('create a JWT token to be used for authentication')
-	.action(async () => {
-		try {
+	.action(
+		cliAction(async () => {
 			let res = await getToken({
 				baseUrl: program.url,
 				token: program.jwt,
@@ -345,17 +370,14 @@ program
 				serverCa: program.serverCa,
 			})
 			console.log(res)
-		} catch (e) {
-			console.log(e.data?.description || e)
-			process.exit(1)
-		}
-	})
+		}),
+	)
 
 program
 	.command('generate')
 	.description('generate a new keypair and mnemonic phrase')
-	.action(async () => {
-		try {
+	.action(
+		cliAction(async () => {
 			let { mnemonic } = await generateMnemonic({
 				baseUrl: program.url,
 				token: program.jwt,
@@ -364,20 +386,15 @@ program
 				serverCa: program.serverCa,
 			})
 			await presentMnemonic(mnemonic, program.wordNum)
-			process.exit(0)
-		} catch (e) {
-			console.log(e.data?.description || e)
-			process.exit(1)
-		}
-	})
+		}),
+	)
 
 program
 	.command('recover')
 	.description('recover a keypair from an existing mnemonic phrase')
-	.action(async () => {
-		let input
-		try {
-			input = await readMnemonic()
+	.action(
+		cliAction(async () => {
+			let input = await readMnemonic()
 			let { mnemonic } = await recoverMnemonic({
 				baseUrl: program.url,
 				mnemonic: input,
@@ -387,11 +404,7 @@ program
 				serverCa: program.serverCa,
 			})
 			await presentMnemonic(mnemonic, program.wordNum)
-			process.exit(0)
-		} catch (e) {
-			console.log(e.toString())
-			process.exit(1)
-		}
-	})
+		}),
+	)
 
 program.parse(process.argv)
