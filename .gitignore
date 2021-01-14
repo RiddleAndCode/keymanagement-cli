@@ -108,3 +108,9 @@ dist/
 
 # Ssl certificates for example
 ssl/
+
+# Ssl certificates for example
+ssl/
+
+# openssl.cnf to enforce proper configuration
+utilities/openssl.cnf
