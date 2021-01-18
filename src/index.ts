@@ -1,12 +1,22 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
-import pkginfo from 'pkginfo'
 import tls from 'tls'
 import fs from 'fs'
 import path from 'path'
 import https from 'https'
 import http from 'http'
 import readline from 'readline'
+import crypto from 'crypto'
+
+const API_VERSION = '1.0.3'
+
+const MNEMONIC_LEN = 24
+const MAX_WORD_LEN = 8
+
+interface MnemonicWord {
+	index: number
+	word: string
+}
 
 // HTTPS / JWT REQUESTS
 
@@ -22,9 +32,9 @@ const handleRes = (
 		const contentType = res.headers['content-type']
 		res.on('data', (d) => {
 			try {
-				if (contentType?.startsWith('application/json')) {
+				if (contentType?.match(/application\/\S*json/)) {
 					d = JSON.parse(d.toString())
-				} else if (contentType?.startsWith('text/plain')) {
+				} else if (contentType?.match(/text\/\S*plain/)) {
 					d = d.toString()
 				}
 			} catch (e) {
@@ -150,7 +160,7 @@ const getToken = async ({
 	key: string
 	serverCa: string
 }): Promise<string> => {
-	const url = `https://${baseUrl}/riddleandcode/key-management/1.0.2/auth/56`
+	const url = `https://${baseUrl}/riddleandcode/key-management/${API_VERSION}/auth/56`
 	return await request({
 		url,
 		data: undefined,
@@ -175,7 +185,7 @@ const generateMnemonic = async ({
 	key: string
 	serverCa: string
 }): Promise<{ mnemonic: string }> => {
-	const url = `https://${baseUrl}/riddleandcode/key-management/1.0.2/masterkey`
+	const url = `https://${baseUrl}/riddleandcode/key-management/${API_VERSION}/masterkey`
 	return await request({
 		url,
 		data: undefined,
@@ -202,7 +212,7 @@ const recoverMnemonic = async ({
 	key: string
 	serverCa: string
 }): Promise<{ mnemonic: string }> => {
-	const url = `https://${baseUrl}/riddleandcode/key-management/1.0.2/masterkey`
+	const url = `https://${baseUrl}/riddleandcode/key-management/${API_VERSION}/masterkey`
 	const data = JSON.stringify({ mnemonic })
 	return await request({
 		url,
@@ -215,7 +225,7 @@ const recoverMnemonic = async ({
 	})
 }
 
-// MNEMONIC I/O
+// CRYPTO HELPERS
 
 const readNextSecretLine = (question: string): Promise<string> =>
 	new Promise((accept, reject) => {
@@ -227,12 +237,14 @@ const readNextSecretLine = (question: string): Promise<string> =>
 			input: process.stdin,
 			output: process.stdout,
 		})
-		rl.on('line', (input) => {
+		const cb = (input: string) => {
 			readline.cursorTo(process.stdout, 0, 0)
 			readline.clearScreenDown(process.stdout)
 			rl.close()
+			rl.off('line', cb)
 			accept(input)
-		})
+		}
+		rl.on('line', cb)
 	})
 
 const printNextSecretLine = (message: string): Promise<boolean> =>
@@ -241,20 +253,21 @@ const printNextSecretLine = (message: string): Promise<boolean> =>
 		readline.cursorTo(process.stdout, 0, 0)
 		readline.clearScreenDown(process.stdout)
 		process.stdout.write(message)
-		process.stdin.on('data', (input) => {
+		const cb = (input: string) => {
 			if (input.includes('\n')) {
 				readline.cursorTo(process.stdout, 0, 0)
 				readline.clearScreenDown(process.stdout)
+				process.stdin.off('data', cb)
 				accept(true)
 			}
-		})
+		}
+		process.stdin.on('data', cb)
 	})
 
 const readMnemonic = async () => {
-	const desiredLen = 24
 	const currentWords = []
-	while (currentWords.length < desiredLen) {
-		const remainingWordLen: number = desiredLen - currentWords.length
+	while (currentWords.length < MNEMONIC_LEN) {
+		const remainingWordLen: number = MNEMONIC_LEN - currentWords.length
 		let data = (
 			await readNextSecretLine(
 				`Enter mnemonic...\nNext words (${remainingWordLen} remaining)`,
@@ -266,40 +279,147 @@ const readMnemonic = async () => {
 		currentWords.push(...data.split(/\s+/))
 		process.stdout.write('\r\x1b[K')
 	}
-	if (currentWords.length > desiredLen) {
-		throw new Error('Mnemonic must be 24 words long')
+	if (currentWords.length > MNEMONIC_LEN) {
+		throw new Error('Mnemonic must be ${MNEMONIC_LEN} words long')
 	}
 	return currentWords.join(' ')
 }
 
+const mnemonicList = (mnemonic: string): MnemonicWord[] =>
+	mnemonic
+		.trim()
+		.split(/\s+/)
+		.map(
+			(word, index): MnemonicWord => {
+				return {
+					word,
+					index,
+				}
+			},
+		)
+
+const mnemonicHash = (mnemonic: string): string =>
+	crypto.createHash('sha256').update(mnemonic).digest('hex').substring(0, 8)
+
 const presentMnemonic = async (mnemonic: string, size: number) => {
-	const words = mnemonic.trim().split(/\s+/)
+	const words = mnemonicList(mnemonic)
+	const header = `Mnemonic ID: ${mnemonicHash(mnemonic)}\n`
 	let start = 0
 	let end = Math.min(start + size, words.length)
 	while (start < words.length) {
 		const nextWords = words.slice(start, end)
 		let descriptor
 		if (end - start > 1) {
-			descriptor = `Words ${start + 1}-${end}`
+			descriptor = `Words ${start + 1}-${end}:\n`
 		} else {
-			descriptor = `Word ${start + 1}`
+			descriptor = `Word: `
 		}
-		await printNextSecretLine(`Press "Enter" to reveal next words...`)
+		let nextWordsGrid = nextWords
+			.map(({ word, index }) => {
+				let padding = ' '.repeat(MAX_WORD_LEN - word.length)
+				return `[${index + 1}] ${word}${padding}`
+			})
+			.join('\t')
 		await printNextSecretLine(
-			`${descriptor}: ${nextWords.join(' ')}\nPress "Enter" to clear...`,
+			`${header}\nPress "Enter" to reveal next words...`,
+		)
+		await printNextSecretLine(
+			`${header}\n${descriptor}${nextWordsGrid}\n\nPress "Enter" to clear...`,
 		)
 		start += size
 		end = Math.min(start + size, words.length)
 	}
 }
 
-// COMMAND LINE PROGRAM
+const selectMnemonicWords = (
+	mnemonic: string,
+	wordNum: number,
+): MnemonicWord[] => {
+	let out: MnemonicWord[] = []
+	let words = mnemonicList(mnemonic)
+	let offset = MNEMONIC_LEN / wordNum + 1
+	let next = 0
+	while (out.length < wordNum) {
+		next = (next + offset) % words.length
+		out.push(words.splice(next, 1)[0])
+	}
+	out.sort((a, b) => a.index - b.index)
+	return out
+}
 
-pkginfo(module, 'name', 'version')
+const verifyMnemonic = async (
+	mnemonic: string,
+	size: number,
+	maxAttempts: number,
+) => {
+	const header = `Mnemonic ID: ${mnemonicHash(mnemonic)}\n`
+	for (const { word, index } of selectMnemonicWords(mnemonic, size)) {
+		console.log(index, word)
+		let attempt = 0
+		let successful = false
+		while (attempt < maxAttempts) {
+			let attemptsRemaining = ''
+			if (attempt > 0) {
+				attemptsRemaining = ` (${maxAttempts - attempt} attempts remaining)`
+			}
+			let data = (
+				await readNextSecretLine(
+					`${header}\nEnter Word ${index + 1}${attemptsRemaining}`,
+				)
+			).trim()
+			if (data.length < 1) {
+				continue
+			}
+			if (data == word) {
+				successful = true
+				break
+			}
+			attempt += 1
+		}
+		if (!successful) {
+			throw new Error('Could not validate mnemonic')
+		}
+	}
+}
+
+// CLI Helper
+
+const cliAction = (program: any, fn: () => Promise<void>) => async () => {
+	try {
+		if (program.wordNum < 1 || program.wordNum > MNEMONIC_LEN) {
+			throw new Error(`'--word-num' must be between 1 and ${MNEMONIC_LEN}`)
+		}
+		if (program.validateNum < 1 || program.validateNum > MNEMONIC_LEN) {
+			throw new Error(`'--validate-num' must be between 1 and ${MNEMONIC_LEN}`)
+		}
+		if (program.maxAttempts < 1) {
+			throw new Error(`'--max-attempts' must be positive`)
+		}
+		await fn()
+		process.exit(0)
+	} catch (e) {
+		let error
+		if (e.data?.description) {
+			error = e.data.description
+		} else if (e.detail) {
+			error = e.detail
+		} else {
+			try {
+				error = e.toString()
+			} catch (_) {
+				error = 'Unknown error occured'
+			}
+		}
+		console.error(error)
+		process.exit(1)
+	}
+}
+
+// COMMAND LINE PROGRAM
 
 const program = new Command()
 
-program.version(module.exports.version)
+program.version(API_VERSION)
 
 program.option(
 	'-u, --url <url>',
@@ -329,14 +449,26 @@ program.option(
 	'-n, --word-num <wordNum>',
 	'number of words to present at a time when displaying mnemonic',
 	(val, lastVal) => parseInt(val),
-	24,
+	MNEMONIC_LEN,
+)
+program.option(
+	'-v, --verify-num <verifyNum>',
+	'number of words to verify when generating or recovering a mnemonic',
+	(val, lastVal) => parseInt(val),
+	6,
+)
+program.option(
+	'--max-attempts <maxAttempts>',
+	'maxium number of attempts to verify a word',
+	(val, lastVal) => parseInt(val),
+	3,
 )
 
 program
 	.command('token')
 	.description('create a JWT token to be used for authentication')
-	.action(async () => {
-		try {
+	.action(
+		cliAction(program, async () => {
 			let res = await getToken({
 				baseUrl: program.url,
 				token: program.jwt,
@@ -345,17 +477,14 @@ program
 				serverCa: program.serverCa,
 			})
 			console.log(res)
-		} catch (e) {
-			console.log(e.data?.description || e)
-			process.exit(1)
-		}
-	})
+		}),
+	)
 
 program
 	.command('generate')
 	.description('generate a new keypair and mnemonic phrase')
-	.action(async () => {
-		try {
+	.action(
+		cliAction(program, async () => {
 			let { mnemonic } = await generateMnemonic({
 				baseUrl: program.url,
 				token: program.jwt,
@@ -364,20 +493,16 @@ program
 				serverCa: program.serverCa,
 			})
 			await presentMnemonic(mnemonic, program.wordNum)
-			process.exit(0)
-		} catch (e) {
-			console.log(e.data?.description || e)
-			process.exit(1)
-		}
-	})
+			await verifyMnemonic(mnemonic, program.verifyNum, program.maxAttempts)
+		}),
+	)
 
 program
 	.command('recover')
 	.description('recover a keypair from an existing mnemonic phrase')
-	.action(async () => {
-		let input
-		try {
-			input = await readMnemonic()
+	.action(
+		cliAction(program, async () => {
+			let input = await readMnemonic()
 			let { mnemonic } = await recoverMnemonic({
 				baseUrl: program.url,
 				mnemonic: input,
@@ -386,12 +511,8 @@ program
 				key: program.key,
 				serverCa: program.serverCa,
 			})
-			await presentMnemonic(mnemonic, program.wordNum)
-			process.exit(0)
-		} catch (e) {
-			console.log(e.toString())
-			process.exit(1)
-		}
-	})
+			await verifyMnemonic(mnemonic, program.verifyNum, program.maxAttempts)
+		}),
+	)
 
 program.parse(process.argv)
