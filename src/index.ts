@@ -150,7 +150,7 @@ const getToken = async ({
 	key: string
 	serverCa: string
 }): Promise<string> => {
-	const url = `https://${baseUrl}/riddleandcode/key-management/1.0.3/auth/56`
+	const url = `https://${baseUrl}/riddleandcode/key-management/1.0/auth/56`
 	return await request({
 		url,
 		data: undefined,
@@ -175,7 +175,7 @@ const generateMnemonic = async ({
 	key: string
 	serverCa: string
 }): Promise<{ mnemonic: string }> => {
-	const url = `https://${baseUrl}/riddleandcode/key-management/1.0.3/masterkey`
+	const url = `https://${baseUrl}/riddleandcode/key-management/1.0/masterkey`
 	return await request({
 		url,
 		data: undefined,
@@ -202,7 +202,7 @@ const recoverMnemonic = async ({
 	key: string
 	serverCa: string
 }): Promise<{ mnemonic: string }> => {
-	const url = `https://${baseUrl}/riddleandcode/key-management/1.0.3/masterkey`
+	const url = `https://${baseUrl}/riddleandcode/key-management/1.0/masterkey`
 	const data = JSON.stringify({ mnemonic })
 	return await request({
 		url,
