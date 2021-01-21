@@ -321,10 +321,10 @@ const presentMnemonic = async (mnemonic: string, size: number) => {
 			})
 			.join('\t')
 		await printNextSecretLine(
-			`${header}\nPress "Enter" to reveal next words...`,
+			`${header}\nPress [Enter] to reveal next words...`,
 		)
 		await printNextSecretLine(
-			`${header}\n${descriptor}${nextWordsGrid}\n\nPress "Enter" to clear...`,
+			`${header}\n${descriptor}${nextWordsGrid}\n\nPress [Enter] to clear...`,
 		)
 		start += size
 		end = Math.min(start + size, words.length)
@@ -492,8 +492,21 @@ program
 				key: program.key,
 				serverCa: program.serverCa,
 			})
+			await printNextSecretLine(
+				`\nMnemonic with ID ${mnemonicHash(
+					mnemonic,
+				)} generated!\nPress [Enter] to begin backup process`,
+			)
 			await presentMnemonic(mnemonic, program.wordNum)
+			await printNextSecretLine(
+				`\nMnemonic with ID ${mnemonicHash(
+					mnemonic,
+				)} backed up!\nPress [Enter] to begin verification process`,
+			)
 			await verifyMnemonic(mnemonic, program.verifyNum, program.maxAttempts)
+			console.log(
+				`Mnemonic with ID ${mnemonicHash(mnemonic)} generated and verified!`,
+			)
 		}),
 	)
 
@@ -511,7 +524,15 @@ program
 				key: program.key,
 				serverCa: program.serverCa,
 			})
+			await printNextSecretLine(
+				`\nMnemonic with ID ${mnemonicHash(
+					mnemonic,
+				)} recovered!\nPress [Enter] to begin verification process`,
+			)
 			await verifyMnemonic(mnemonic, program.verifyNum, program.maxAttempts)
+			console.log(
+				`Mnemonic with ID ${mnemonicHash(mnemonic)} recovered and verified!`,
+			)
 		}),
 	)
 
