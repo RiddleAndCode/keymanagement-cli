@@ -8,7 +8,7 @@ import http from 'http'
 import readline from 'readline'
 import crypto from 'crypto'
 
-const API_VERSION = '1.0.3'
+const API_VERSION = '1.0'
 
 const MNEMONIC_LEN = 24
 const MAX_WORD_LEN = 8
