@@ -41,3 +41,16 @@ The CLI uses client side TLS for authentication (as well as JWT if the `--token`
 | ./ssl/client-key.pem  | ./ssl/client-key.pem  |
 
 Although of course, the server should be configurable against any client CA, and vice-versa
+
+## Step by step guide
+
+1. Create client certificates 
+For self-signed certificates use the script provided in [/utilities](/utilities).
+Send the file `client-ca-cert.pem` to Riddle&Code.
+2. Get CA certificate from Riddle&Code for the instance to be used, rename it to `rnc-ca-cert.pem` and store it in the directory `ssl`.
+3. Generate a new keypair and save the mnemonic phrase
+`keyman -u <server> -c ssl/client-cert.pem -k ssl/client-key.pem -a ssl/rnc-ca-cert.pem generate`
+4. Recover from the mnemonic phrase
+`keyman -u ckm-s1s-dev.r3c.network:8443 -c ssl/client-cert.pem -k ssl/client-key.pem -a ssl/rnc-ca-cert.pem recover`
+5. Generate a token for authentication
+`keyman -u <server> -c ssl/client-cert.pem -k ssl/client-key.pem -a ssl/rnc-ca-cert.pem token` 
